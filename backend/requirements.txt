@@ -1,0 +1,22 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg
+alembic
+pydantic-settings
+celery
+redis
+python-jose
+passlib[bcrypt]
+bcrypt==4.0.1
+python-multipart
+minio
+opencv-python-headless==4.9.0.80
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.3.0+cpu
+numpy
+reportlab
+websockets
+httpx
+psycopg2-binary==2.9.9
+

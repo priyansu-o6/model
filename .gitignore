@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+.next/
+*.pth
+*.pt
+*.bin
+.DS_Store
+backend/ml/models/weights/
+*.egg-info/
+.venv/
+venv/

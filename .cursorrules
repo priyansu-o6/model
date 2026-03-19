@@ -1,0 +1,24 @@
+You are working on Pratyaksha (deepfake detection platform).
+
+Core standards:
+- Preserve existing architecture and naming conventions.
+- Prefer small, readable components with explicit TypeScript types.
+- Use existing API helpers in `frontend/lib/api.ts` instead of ad-hoc fetch calls when possible.
+- Handle loading, error, and empty states for every async UI.
+- Keep UI accessible: keyboard navigable controls, visible focus styles, and ARIA labels for icon-only buttons.
+
+Frontend conventions:
+- Next.js App Router pages under `frontend/app`.
+- Use client components only when hooks/browser APIs are needed.
+- Reuse shared design tokens and Tailwind colors already defined in `app/globals.css`.
+- For charts, use Recharts with graceful fallback when data is missing.
+- For auth-protected views, rely on `components/auth/ProtectedRoute.tsx`.
+
+Backend conventions:
+- Keep router handlers thin; push logic into services where practical.
+- Prefer typed response schemas and explicit error handling.
+- Avoid breaking existing endpoints without migration notes.
+
+Safety:
+- Never hardcode secrets.
+- Avoid destructive data operations unless explicitly requested.
