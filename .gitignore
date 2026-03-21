@@ -12,3 +12,11 @@ backend/ml/models/weights/
 *.egg-info/
 .venv/
 venv/
+
+convert_weights.py
+generate_weights.py
+weights_output.txt
+weights_output_utf8.txt
+task.md
+backend/ml/models/weights/*.pth
+backend/ml/models/weights/*.h5
