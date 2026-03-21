@@ -11,7 +11,12 @@ from app.config import get_settings
 from app.models import DetectionResult, FrameResult, VerificationSession
 from app.services.detection_service import DetectionService
 from app.services.risk_scoring import RiskScorer
+from app.services.storage import MEDIA_BUCKET, MinioStorageService
 from workers.celery_app import app as celery_app
+import os
+import tempfile
+import cv2
+import numpy as np
 
 
 settings = get_settings()
@@ -33,8 +38,48 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
         session.status = "processing"
         db.commit()
 
+        frames = []
+        if media_path:
+            try:
+                storage = MinioStorageService()
+                media_bytes = storage.download_file(MEDIA_BUCKET, media_path)
+                
+                ext = media_path.split('.')[-1].lower() if '.' in media_path else ''
+                if ext in ['mp4', 'webm', 'mov', 'avi']:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_file:
+                        temp_file.write(media_bytes)
+                        temp_file_path = temp_file.name
+                    try:
+                        cap = cv2.VideoCapture(temp_file_path)
+                        for _ in range(5):
+                            ret, frame = cap.read()
+                            if ret:
+                                frames.append(frame)
+                            else:
+                                break
+                        cap.release()
+                    finally:
+                        if os.path.exists(temp_file_path):
+                            os.remove(temp_file_path)
+                else:
+                    np_arr = np.frombuffer(media_bytes, np.uint8)
+                    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        frames = [img] * 5
+            except Exception as e:
+                import traceback
+                print(f"Error extracting frames: {e}")
+                print(traceback.format_exc())
+
+        print(f"DEBUG: media_path = {media_path}")
+        print(f"DEBUG: frames extracted = {len(frames)}")
+        if frames:
+            print(f"DEBUG: first frame shape = {frames[0].shape if hasattr(frames[0], 'shape') else type(frames[0])}")
+        else:
+            print("DEBUG: NO FRAMES EXTRACTED")
+
         detection_service = DetectionService()
-        pipeline_result = detection_service.run_full_pipeline(frames=[], audio_path=media_path)
+        pipeline_result = detection_service.run_full_pipeline(frames=frames, audio_path=media_path)
         signals = pipeline_result["signals"]
         risk_result = pipeline_result["risk"]
 
@@ -44,11 +89,11 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
             verdict=risk_result.verdict,
             risk_score=risk_result.risk_score,
             risk_level=risk_result.risk_level,
-            xception_score=signals["xception_score"],
-            temporal_score=signals["temporal_consistency"],
-            rppg_score=signals["rppg_score"],
-            liveness_score=signals["liveness_score"],
-            audio_score=signals["audio_score"],
+            xception_score=signals.get("xception_score"),
+            temporal_score=None,
+            rppg_score=None,
+            liveness_score=None,
+            audio_score=None,
             gradcam_path=None,
             suspicious_regions=None,
             explanation_reasons=risk_result.explanation_reasons,
@@ -62,9 +107,9 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
                 session_id=session.id,
                 frame_number=i + 1,
                 timestamp_ms=(i + 1) * 1000,
-                xception_score=signals["xception_score"],
-                temporal_consistency=signals["temporal_consistency"],
-                rppg_value=signals["rppg_score"],
+                xception_score=signals.get("xception_score"),
+                temporal_consistency=None,
+                rppg_value=None,
                 is_flagged=False,
                 created_at=now,
             )

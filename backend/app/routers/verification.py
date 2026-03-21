@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db_session, log_audit
+from app.dependencies import get_current_user, get_db_session
 from app.models import DetectionResult, VerificationSession
 from app.schemas.verification import DetectionResultSchema, StartLiveSessionRequest
 from app.services.risk_scoring import RiskScorer
@@ -57,15 +57,6 @@ async def upload_verification_media(
     await db.refresh(session)
 
     celery_app.send_task("tasks.analyze_video", args=[str(session.id), object_key])
-
-    await log_audit(
-        db=db,
-        user_id=str(current_user.id),
-        action="upload_media",
-        resource_type="verification_session",
-        resource_id=str(session.id),
-        ip_address=None,
-    )
 
     return {"session_id": str(session.id), "status": "pending"}
 
@@ -173,15 +164,6 @@ async def sync_verification(
     db.add(det)
     await db.commit()
     await db.refresh(det)
-
-    await log_audit(
-        db=db,
-        user_id=str(current_user.id),
-        action="sync_verification",
-        resource_type="verification_session",
-        resource_id=str(session.id),
-        ip_address=None,
-    )
 
     return DetectionResultSchema.model_validate(det)
 

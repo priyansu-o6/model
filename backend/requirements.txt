@@ -14,7 +14,7 @@ minio
 opencv-python-headless==4.9.0.80
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.3.0+cpu
-numpy
+numpy==1.26.4
 reportlab
 websockets
 httpx

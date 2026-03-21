@@ -19,11 +19,7 @@ class RiskScorer:
     """Fuse multiple model signals into a single risk score and verdict."""
 
     WEIGHTS: Dict[str, float] = {
-        "xception_score": 0.35,
-        "temporal_consistency": 0.20,
-        "rppg_score": 0.15,
-        "liveness_score": 0.15,
-        "audio_score": 0.15,
+        "xception_score": 1.0,
     }
 
     THRESHOLDS: Dict[str, Tuple[float, float]] = {
@@ -36,15 +32,11 @@ class RiskScorer:
     def compute_risk(self, signals: Dict[str, Any]) -> RiskScoreResult:
         """Compute fused risk score, level, explanations, interval, and verdict."""
         normalized: Dict[str, float] = {}
-        for key, weight in self.WEIGHTS.items():
-            raw_value = float(signals.get(key, 0.0) or 0.0)
-            # For consistency, treat all signals as 0-1, then scale to 0-100.
-            normalized[key] = max(0.0, min(raw_value, 1.0))
+        raw_value = float(signals.get("xception_score", 0.5) or 0.5)
+        normalized["xception_score"] = max(0.0, min(raw_value, 1.0))
 
-        weighted_sum = sum(normalized[k] * w for k, w in self.WEIGHTS.items())
-        total_weight = sum(self.WEIGHTS.values()) or 1.0
-        score_0_1 = weighted_sum / total_weight
-        risk_score = round(score_0_1 * 100.0, 2)
+        risk_score = float(signals.get("xception_score", 0.5)) * 100
+        risk_score = round(risk_score, 2)
 
         risk_level = self._determine_level(risk_score)
         verdict = self._determine_verdict(risk_level)
