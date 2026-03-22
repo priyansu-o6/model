@@ -20,3 +20,4 @@ websockets
 httpx
 psycopg2-binary==2.9.9
 transformers==4.40.0
+scipy==1.13.0

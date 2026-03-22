@@ -28,6 +28,8 @@ export default function SignalPanel({ result, processing = false }: SignalPanelP
   const temporalHistory = dataToSeries(result.temporal_history);
   const spoofProb = Math.round((result.audio_spoof_probability ?? 0) * 100);
   const xception = Math.round((result.xception_score ?? 0) * 100);
+  
+  const isRppgReady = result?.rppg_ready === true;
 
   return (
     <div className="grid gap-3">
@@ -41,6 +43,31 @@ export default function SignalPanel({ result, processing = false }: SignalPanelP
           {processing ? <span className="animate-pulse">ANALYZING...</span> : "Stable"}
         </div>
       </section>
+
+      {/* rPPG Heart Rate */}
+      <div className="bg-[#111827] border border-[#1F2937] rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-[#6B7280]">🫀 rPPG Heart Rate</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${
+            isRppgReady 
+              ? 'bg-green-500/20 text-green-400' 
+              : 'bg-gray-500/20 text-gray-400'
+          }`}>
+            {isRppgReady ? 'SIGNAL PRESENT' : 'CALIBRATING...'}
+          </span>
+        </div>
+        <div className="text-3xl font-mono text-[#00D4FF]">
+          {isRppgReady && Number(result?.rppg_bpm) > 0 ? `${Math.round(Number(result.rppg_bpm))}` : '--'} 
+          <span className="text-sm text-[#6B7280] ml-1">BPM</span>
+        </div>
+        <div className="text-xs text-[#6B7280] mt-1">
+          {isRppgReady 
+            ? (Number(result?.rppg_bpm) >= 50 && Number(result?.rppg_bpm) <= 120 
+                ? '✅ Normal range' 
+                : '⚠️ Abnormal range')
+            : 'Collecting 10 seconds of data...'}
+        </div>
+      </div>
     </div>
   );
 }

@@ -24,7 +24,22 @@ from ml.mock_service import (
 import numpy as np
 import cv2
 from ml.deepfake.mesonet import MesoNetDetector
+from ml.liveness.rppg_extractor import RPPGExtractor
 
+# Module-level singletons - load once
+_mesonet_instance = None
+_rppg_instances: dict = {}
+
+def get_mesonet():
+    global _mesonet_instance
+    if _mesonet_instance is None:
+        _mesonet_instance = MesoNetDetector()
+    return _mesonet_instance
+
+def get_rppg(session_id: str) -> RPPGExtractor:
+    if session_id not in _rppg_instances:
+        _rppg_instances[session_id] = RPPGExtractor(fps=15.0, window_seconds=3)
+    return _rppg_instances[session_id]
 
 router = APIRouter()
 
@@ -40,8 +55,8 @@ async def websocket_live(
     frame_count = 0
     last_result_time = asyncio.get_event_loop().time()
 
-    mesonet = MesoNetDetector()
-    rppg = MockRPPGExtractor()
+    mesonet = get_mesonet()
+    rppg = get_rppg(session_id)
     temporal = MockTemporalScorer()
     audio = MockAASSISTDetector()
     challenge_engine = MockChallengeEngine()
@@ -60,14 +75,16 @@ async def websocket_live(
         )
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
-        # Try with relaxed parameters for phone screens
+        # Relaxed face detection for demo
         faces = face_cascade.detectMultiScale(
-            gray, scaleFactor=1.05, minNeighbors=3, 
-            minSize=(30, 30),
+            gray, scaleFactor=1.1, minNeighbors=4, 
+            minSize=(80, 80),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
         
+        # Take largest face only
         if len(faces) > 0:
+            faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
             x, y, w_f, h_f = faces[0]
             pad = int(0.3 * max(w_f, h_f))
             x1 = max(0, x - pad)
@@ -76,6 +93,8 @@ async def websocket_live(
             y2 = min(h, y + h_f + pad)
             return frame[y1:y2, x1:x2], True, (x, y, w_f, h_f)
         return frame, False, None
+
+    rppg_result = {"bpm": 0.0, "liveness_score": 0.5, "ready": False}
 
     try:
         while True:
@@ -102,49 +121,61 @@ async def websocket_live(
                 if frame is not None:
                     cropped, face_found, face_box = crop_face(frame)
                     if face_found:
+                        rppg.add_frame(cropped)
                         x_out = mesonet.predict_frame(cropped)
-                        print(f"DEBUG WS: face_found={face_found} score={x_out['score']:.4f}")
                     else:
+                        # Still feed center crop to rPPG even without confirmed face
+                        h, w = frame.shape[:2]
+                        center_crop = frame[h//4:3*h//4, w//4:3*w//4]
+                        rppg.add_frame(center_crop)
                         x_out = {"score": 1.0}
-                        print(f"DEBUG WS: face_found=False, skipping MesoNet")
                 else:
-                    print(f"DEBUG WS: frame decode FAILED, raw={len(raw)} image={len(image_bytes)}")
                     x_out = {"score": 0.0}
             except Exception as e:
-                print(f"DEBUG WS: exception {e}")
                 break
             
             x_score = 1.0 - float(x_out.get("score", 0.0))
             frame_count += 1
+            
+            rppg_result = rppg.compute_bpm()
 
             now_ts = asyncio.get_event_loop().time()
             if now_ts - last_result_time >= 0.5:
-                rppg_result = rppg.extract_from_frames([])
                 temporal_result = temporal.score_frames([])
                 audio_result = audio.analyze_audio("")
                 challenge_engine.verify_response([], None)  # result unused for now
 
                 signals = {
                     "xception_score": x_score,
+                    "rppg_score": rppg_result.get("liveness_score", 0.5)
                 }
                 risk = scorer.compute_risk(signals)
-                await manager.send_result(
-                    session_id,
-                    {
-                        "xception_score": x_score,
-                        "rppg_bpm": 0,
-                        "risk_score": risk.risk_score,
-                        "risk_level": risk.risk_level,
-                        "verdict": risk.verdict,
-                        "liveness_score": 0,
-                        "audio_score": 0,
-                        "temporal_score": 0,
-                        "frame_count": frame_count,
-                        "face_detected": face_found,
-                        "face_box": {"x": face_box[0], "y": face_box[1], "w": face_box[2], "h": face_box[3]} if face_found and face_box else None,
-                    },
-                )
-                last_result_time = now_ts
+                try:
+                    await manager.send_result(
+                        session_id,
+                        {
+                            "xception_score": float(x_score),
+                            "rppg_bpm": float(rppg_result.get("bpm", 0.0)),
+                            "risk_score": float(risk.risk_score),
+                            "risk_level": str(risk.risk_level),
+                            "verdict": str(risk.verdict),
+                            "liveness_score": float(rppg_result.get("liveness_score", 0.5)),
+                            "rppg_ready": bool(rppg_result.get("ready", False)),
+                            "audio_score": 0.0,
+                            "temporal_score": 0.0,
+                            "frame_count": int(frame_count),
+                            "face_detected": bool(face_found),
+                            "face_box": {
+                                "x": int(face_box[0]), 
+                                "y": int(face_box[1]), 
+                                "w": int(face_box[2]), 
+                                "h": int(face_box[3])
+                            } if face_found and face_box else None,
+                        },
+                    )
+                    last_result_time = now_ts
+                except Exception:
+                    break
 
             if frame_count % 5 == 0:
                 fr = FrameResult(
@@ -161,6 +192,7 @@ async def websocket_live(
                 await db.commit()
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
+        # Don't clean up rppg here - keep it for reconnections
 
 
 @router.get("/api/v1/analytics/dashboard", response_model=DashboardStatsSchema)
