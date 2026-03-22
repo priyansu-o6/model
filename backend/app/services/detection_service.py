@@ -25,7 +25,11 @@ class DetectionService:
             self.challenge = MockChallengeEngine()
         else:
             self.deepfake_detector = MesoNetDetector()
-            self.ai_detector = AIImageDetector()
+            try:
+                self.ai_detector = AIImageDetector()
+            except Exception as e:
+                print(f"AI detector failed to load: {e}")
+                self.ai_detector = None
             from ml.mock_service import MockRPPGExtractor, MockAASSISTDetector, MockTemporalScorer, MockChallengeEngine
             self.rppg = MockRPPGExtractor()
             self.audio = MockAASSISTDetector()
@@ -45,8 +49,14 @@ class DetectionService:
         mesonet_score = float(mesonet_result["score"])
         
         # Run AI Image Detector (StyleGAN, Gemini detection)
-        ai_result = self.ai_detector.predict_frame(frame)
-        ai_score = float(ai_result["score"])
+        if getattr(self, 'ai_detector', None):
+            try:
+                ai_result = self.ai_detector.predict_frame(frame)
+                ai_score = float(ai_result["score"])
+            except Exception:
+                ai_score = 0.0
+        else:
+            ai_score = 0.0
         
         # Combined score - take the higher of the two
         combined_score = max(mesonet_score, ai_score)

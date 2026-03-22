@@ -34,6 +34,7 @@ type SessionResult = {
   suspicious_regions?: SuspiciousRegion[];
   confidence_interval?: number[];
   attack_type?: string;
+  gradcam_path?: string;
 };
 
 type SessionDetailResponse = {
@@ -255,6 +256,39 @@ export default function SessionDetailPage() {
             </tbody>
           </table>
         </div>
+
+        {session.result?.gradcam_path && (
+          <div className="bg-[#111827] border border-[#1F2937] rounded-lg p-6">
+            <h2 className="text-lg font-semibold text-[#F9FAFB] mb-2">
+              GradCAM Heatmap
+            </h2>
+            <p className="text-[#6B7280] text-sm mb-4">
+              Highlighted regions show where the AI detected manipulation. 
+              Red areas indicate high suspicion, blue areas are clean.
+            </p>
+            <img
+              src={`data:image/jpeg;base64,${session.result.gradcam_path}`}
+              alt="GradCAM Heatmap"
+              className="rounded-lg max-w-sm w-full"
+            />
+            {session.result.suspicious_regions && 
+             session.result.suspicious_regions.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-[#F9FAFB] mb-2">
+                  Suspicious Regions Detected:
+                </h3>
+                {session.result.suspicious_regions.map((region: any, i: number) => (
+                  <div key={i} className="flex justify-between py-1 border-b border-[#1F2937]">
+                    <span className="text-[#F9FAFB] text-sm">{region.region}</span>
+                    <span className="text-[#FF4444] text-sm font-mono">
+                      {region.confidence}% confidence
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="rounded-xl border border-bg-border bg-bg-surface/60 p-4">
           <h3 className="font-display text-sm text-text-primary">Why was this flagged?</h3>
           <ul className="mt-2 space-y-1 text-xs">

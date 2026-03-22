@@ -25,6 +25,10 @@ def create_celery_app() -> Celery:
         result_serializer="json",
         timezone="UTC",
         enable_utc=True,
+        worker_concurrency=1,
+        worker_prefetch_multiplier=1,
+        task_soft_time_limit=60,
+        task_time_limit=120,
     )
     return celery_app
 

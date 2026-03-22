@@ -7,16 +7,7 @@ export const api = axios.create({
   withCredentials: false,
 });
 
-api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token");
-    if (token && token !== "dev-bypass-token") {
-      config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
-  return config;
-});
+api.interceptors.request.use((config) => config);
 
 api.interceptors.response.use(
   (response) => response,

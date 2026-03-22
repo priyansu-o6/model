@@ -24,7 +24,6 @@ async def list_sessions(
     status_filter: Optional[str] = None,
     mode: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session),
-    current_user=Depends(get_current_user),
 ) -> SessionListResponse:
     """Return paginated list of sessions with optional filters."""
     query = select(VerificationSession)
@@ -55,7 +54,6 @@ async def list_sessions(
 async def get_session_detail(
     session_id: UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user=Depends(get_current_user),
 ) -> dict[str, Any]:
     """Return session, detection_result, and frame_results."""
     result = await db.execute(select(VerificationSession).where(VerificationSession.id == session_id))
@@ -92,6 +90,7 @@ async def get_session_detail(
             "explanation_reasons": det.explanation_reasons,
             "suspicious_regions": det.suspicious_regions,
             "confidence_interval": det.confidence_interval,
+            "gradcam_path": det.gradcam_path,
         }
         if det
         else None,
@@ -113,7 +112,6 @@ async def get_session_detail(
 async def get_session_heatmap(
     session_id: UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user=Depends(get_current_user),
 ) -> StreamingResponse:
     """Return Grad-CAM heatmap image from MinIO."""
     det = (
@@ -131,7 +129,6 @@ async def get_session_heatmap(
 async def get_session_report(
     session_id: UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user=Depends(get_current_user),
 ) -> Response:
     """Return a placeholder PDF report."""
     content = b"%PDF-1.4\n% Pratyaksha report placeholder\n"

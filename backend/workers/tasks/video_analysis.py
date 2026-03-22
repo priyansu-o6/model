@@ -17,7 +17,10 @@ import os
 import tempfile
 import cv2
 import numpy as np
-
+from ml.deepfake.gradcam import MesoNetGradCAM
+import base64
+import io
+from PIL import Image as PILImage
 
 settings = get_settings()
 sync_engine = create_engine(settings.sync_database_url)
@@ -83,6 +86,29 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
         signals = pipeline_result["signals"]
         risk_result = pipeline_result["risk"]
 
+        gradcam_base64 = None
+        suspicious_regions_list = None
+        
+        try:
+            if frames and not settings.use_mock_models:
+                from ml.deepfake.mesonet import MesoNetDetector
+                _mesonet = MesoNetDetector()
+                _gradcam = MesoNetGradCAM(_mesonet)
+                gradcam_result = _gradcam.analyze(frames[0])
+                
+                if gradcam_result["overlay"] is not None:
+                    pil_img = PILImage.fromarray(gradcam_result["overlay"])
+                    buffer = io.BytesIO()
+                    pil_img.save(buffer, format="JPEG")
+                    gradcam_base64 = base64.b64encode(
+                        buffer.getvalue()
+                    ).decode()
+                
+                if gradcam_result["suspicious_regions"]:
+                    suspicious_regions_list = gradcam_result["suspicious_regions"]
+        except Exception as e:
+            print(f"GradCAM failed (non-critical): {e}")
+
         now = datetime.now(timezone.utc)
         det = DetectionResult(
             session_id=session.id,
@@ -94,8 +120,8 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
             rppg_score=None,
             liveness_score=None,
             audio_score=None,
-            gradcam_path=None,
-            suspicious_regions=None,
+            gradcam_path=gradcam_base64,
+            suspicious_regions=suspicious_regions_list,
             explanation_reasons=risk_result.explanation_reasons,
             confidence_interval=risk_result.confidence_interval,
             created_at=now,
@@ -135,4 +161,3 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
         raise self.retry(exc=exc, countdown=10)
     finally:
         db.close()
-

@@ -57,6 +57,23 @@ class MesoNetDetector:
             print("MesoNet weights not found - using random weights")
 
     def preprocess(self, frame: np.ndarray) -> torch.Tensor:
+        # Try to detect face and crop it
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(50, 50))
+        
+        if len(faces) > 0:
+            x, y, w, h = faces[0]
+            # Add padding around face
+            pad = int(0.2 * max(w, h))
+            x1 = max(0, x - pad)
+            y1 = max(0, y - pad)
+            x2 = min(frame.shape[1], x + w + pad)
+            y2 = min(frame.shape[0], y + h + pad)
+            frame = frame[y1:y2, x1:x2]
+        
         face = cv2.resize(frame, (256, 256))
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
         face = face.astype(np.float32) / 255.0

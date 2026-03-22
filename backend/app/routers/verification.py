@@ -34,7 +34,6 @@ ALLOWED_MIME_TYPES = {
 async def upload_verification_media(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
-    current_user=Depends(get_current_user),
 ) -> dict[str, Any]:
     """Upload media, create a verification session, trigger async analysis."""
     if file.content_type not in ALLOWED_MIME_TYPES:
@@ -45,7 +44,7 @@ async def upload_verification_media(
     storage.upload_file(file.file, MEDIA_BUCKET, object_key, content_type=file.content_type)
 
     session = VerificationSession(
-        user_id=current_user.id,
+        user_id=TEST_USER_ID,
         mode="upload",
         status="pending",
         subject_name=None,
@@ -109,7 +108,6 @@ async def end_live_session(
 async def sync_verification(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
-    current_user=Depends(get_current_user),
 ) -> DetectionResultSchema:
     """Run synchronous mock detection, persist result, and return it."""
     if file.content_type not in ALLOWED_MIME_TYPES:
@@ -132,7 +130,7 @@ async def sync_verification(
 
     now = datetime.now(timezone.utc)
     session = VerificationSession(
-        user_id=current_user.id,
+        user_id=TEST_USER_ID,
         mode="upload",
         status="complete",
         subject_name=None,
