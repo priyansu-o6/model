@@ -38,6 +38,8 @@ services:
       - minio
       - n8n
     restart: unless-stopped
+    volumes:
+      - hf_cache:/root/.cache/huggingface
 
   celery_worker:
     build:
@@ -60,6 +62,8 @@ services:
       - backend
       - redis
     restart: unless-stopped
+    volumes:
+      - hf_cache:/root/.cache/huggingface
 
   db:
     image: postgres:16
@@ -116,4 +120,5 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  hf_cache:
 

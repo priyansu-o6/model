@@ -40,7 +40,7 @@ class RiskScorer:
 
         risk_level = self._determine_level(risk_score)
         verdict = self._determine_verdict(risk_level)
-        explanation_reasons = self._build_explanations(normalized, risk_score, risk_level)
+        explanation_reasons = self._build_explanations(signals, risk_score, risk_level)
         confidence_interval = self._compute_confidence_interval(risk_score)
 
         return RiskScoreResult(
@@ -64,16 +64,16 @@ class RiskScorer:
             return "suspicious"
         return "deepfake"
 
-    def _build_explanations(self, normalized: Dict[str, float], risk_score: float, risk_level: str) -> List[str]:
+    def _build_explanations(self, signals: Dict[str, Any], risk_score: float, risk_level: str) -> List[str]:
         reasons: List[str] = [f"Overall risk score {risk_score:.1f} classified as {risk_level}."]
 
-        for signal, value in normalized.items():
-            if value >= 0.7:
-                reasons.append(f"{signal} indicates strong deepfake likelihood (score={value:.2f}).")
-            elif value >= 0.4:
-                reasons.append(f"{signal} is moderately suspicious (score={value:.2f}).")
-            else:
-                reasons.append(f"{signal} appears benign (score={value:.2f}).")
+        mesonet_score = float(signals.get("mesonet_score", 0.0))
+        ai_score = float(signals.get("ai_score", 0.0))
+
+        if mesonet_score > 0.5:
+            reasons.append("MesoNet detected face-swap manipulation")
+        if ai_score > 0.5:
+            reasons.append("AI image detector found signs of synthetic generation")
 
         return reasons
 
