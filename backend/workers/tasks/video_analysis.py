@@ -41,6 +41,56 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
         session.status = "processing"
         db.commit()
 
+        # For live sessions, use saved frame scores
+        if session.mode == "live" and not media_path:
+            from sqlalchemy import func as sqlfunc
+            avg_score_result = db.execute(
+                select(sqlfunc.avg(FrameResult.xception_score))
+                .where(FrameResult.session_id == session.id)
+                .where(FrameResult.xception_score.isnot(None))
+            ).scalar()
+            
+            avg_score = float(avg_score_result) if avg_score_result else 0.0
+            
+            signals = {"xception_score": avg_score}
+            risk_result = RiskScorer().compute_risk(signals)
+
+            now = datetime.now(timezone.utc)
+            det = DetectionResult(
+                session_id=session.id,
+                verdict=risk_result.verdict,
+                risk_score=risk_result.risk_score,
+                risk_level=risk_result.risk_level,
+                xception_score=avg_score,
+                temporal_score=None,
+                rppg_score=None,
+                liveness_score=None,
+                audio_score=None,
+                gradcam_path=None,
+                suspicious_regions=None,
+                explanation_reasons=risk_result.explanation_reasons,
+                confidence_interval=risk_result.confidence_interval,
+                created_at=now,
+            )
+            db.add(det)
+            
+            session.status = "complete"
+            session.completed_at = now
+            db.commit()
+            
+            if settings.n8n_webhook_url:
+                with httpx.Client(timeout=5.0) as client:
+                    client.post(
+                        str(settings.n8n_webhook_url),
+                        json={
+                            "session_id": str(session.id),
+                            "verdict": det.verdict,
+                            "risk_score": det.risk_score,
+                            "risk_level": det.risk_level,
+                        },
+                    )
+            return
+
         frames = []
         if media_path:
             try:

@@ -20,8 +20,10 @@ from ml.mock_service import (
     MockChallengeEngine,
     MockRPPGExtractor,
     MockTemporalScorer,
-    MockXceptionDetector,
 )
+import numpy as np
+import cv2
+from ml.deepfake.mesonet import MesoNetDetector
 
 
 router = APIRouter()
@@ -38,20 +40,82 @@ async def websocket_live(
     frame_count = 0
     last_result_time = asyncio.get_event_loop().time()
 
-    x_model = MockXceptionDetector()
+    mesonet = MesoNetDetector()
     rppg = MockRPPGExtractor()
     temporal = MockTemporalScorer()
     audio = MockAASSISTDetector()
     challenge_engine = MockChallengeEngine()
     scorer = RiskScorer()
 
+    def crop_face(frame):
+        h, w = frame.shape[:2]
+        blob = cv2.dnn.blobFromImage(
+            cv2.resize(frame, (300, 300)), 1.0,
+            (300, 300), (104.0, 177.0, 123.0)
+        )
+        
+        # Use OpenCV's built-in face detector
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Try with relaxed parameters for phone screens
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.05, minNeighbors=3, 
+            minSize=(30, 30),
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+        
+        if len(faces) > 0:
+            x, y, w_f, h_f = faces[0]
+            pad = int(0.3 * max(w_f, h_f))
+            x1 = max(0, x - pad)
+            y1 = max(0, y - pad)
+            x2 = min(w, x + w_f + pad)
+            y2 = min(h, y + h_f + pad)
+            return frame[y1:y2, x1:x2], True, (x, y, w_f, h_f)
+        return frame, False, None
+
     try:
         while True:
-            data = await websocket.receive_bytes()
+            face_found = False
+            face_box = None
+            try:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    break
+                
+                raw = message.get("bytes") or message.get("text", "").encode()
+                
+                # Find the newline separator between metadata and image bytes
+                newline_pos = raw.find(b"\n")
+                if newline_pos != -1:
+                    image_bytes = raw[newline_pos + 1:]
+                else:
+                    image_bytes = raw
+                
+                # Decode image
+                np_arr = np.frombuffer(image_bytes, np.uint8)
+                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                
+                if frame is not None:
+                    cropped, face_found, face_box = crop_face(frame)
+                    if face_found:
+                        x_out = mesonet.predict_frame(cropped)
+                        print(f"DEBUG WS: face_found={face_found} score={x_out['score']:.4f}")
+                    else:
+                        x_out = {"score": 1.0}
+                        print(f"DEBUG WS: face_found=False, skipping MesoNet")
+                else:
+                    print(f"DEBUG WS: frame decode FAILED, raw={len(raw)} image={len(image_bytes)}")
+                    x_out = {"score": 0.0}
+            except Exception as e:
+                print(f"DEBUG WS: exception {e}")
+                break
+            
+            x_score = 1.0 - float(x_out.get("score", 0.0))
             frame_count += 1
-
-            x_out = x_model.predict_frame(None)
-            x_score = float(x_out["score"])
 
             now_ts = asyncio.get_event_loop().time()
             if now_ts - last_result_time >= 0.5:
@@ -62,25 +126,22 @@ async def websocket_live(
 
                 signals = {
                     "xception_score": x_score,
-                    "temporal_consistency": float(temporal_result["consistency_score"]),
-                    "rppg_score": float(rppg_result["liveness_score"]),
-                    "liveness_score": float(rppg_result["liveness_score"]),
-                    "audio_score": float(audio_result["score"]),
                 }
                 risk = scorer.compute_risk(signals)
-
                 await manager.send_result(
                     session_id,
                     {
-                        "xception_score": signals["xception_score"],
-                        "rppg_bpm": float(rppg_result["bpm"]),
+                        "xception_score": x_score,
+                        "rppg_bpm": 0,
                         "risk_score": risk.risk_score,
                         "risk_level": risk.risk_level,
                         "verdict": risk.verdict,
-                        "liveness_score": signals["liveness_score"],
-                        "audio_score": signals["audio_score"],
-                        "temporal_score": signals["temporal_consistency"],
+                        "liveness_score": 0,
+                        "audio_score": 0,
+                        "temporal_score": 0,
                         "frame_count": frame_count,
+                        "face_detected": face_found,
+                        "face_box": {"x": face_box[0], "y": face_box[1], "w": face_box[2], "h": face_box[3]} if face_found and face_box else None,
                     },
                 )
                 last_result_time = now_ts

@@ -15,7 +15,7 @@ class Meso4(nn.Module):
         self.bn3 = nn.BatchNorm2d(16)
         self.conv4 = nn.Conv2d(16, 16, 5, padding=2)
         self.bn4 = nn.BatchNorm2d(16)
-        self.fc1 = nn.Linear(4096, 16)
+        self.fc1 = nn.Linear(1024, 16)
         self.fc2 = nn.Linear(16, 1)
         self.pool = nn.MaxPool2d(2, 2)
         self.dropout = nn.Dropout(0.5)
@@ -74,11 +74,6 @@ def load_keras_weights(model, h5_path):
 
     # Dense layers - Keras uses (in, out), PyTorch uses (out, in)
     fc1_ker = get_weights('dense_3')['kernel:0'][()]
-    if fc1_ker.shape[0] == 1024:
-        # Pad the 1024 Keras weights with zeros to match 4096 PyTorch size
-        padded = np.zeros((4096, 16))
-        padded[:1024, :] = fc1_ker
-        fc1_ker = padded
     
     model.fc1.weight.data = torch.FloatTensor(np.transpose(fc1_ker))
     model.fc1.bias.data = torch.FloatTensor(
@@ -101,7 +96,7 @@ print('Saved PyTorch weights!')
 
 # Quick test
 model.eval()
-test = torch.randn(1, 3, 256, 256)
+test = torch.randn(1, 3, 128, 128)
 with torch.no_grad():
     out = model(test)
 print(f'Test score: {out.item():.4f} (should not be exactly 0.5)')

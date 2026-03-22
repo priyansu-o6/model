@@ -146,20 +146,30 @@ export default function LiveVideoStream({
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (lastResult?.bbox) {
-        const b = lastResult.bbox;
-        ctx.strokeStyle = "#10B981";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(b.x, b.y, b.width, b.height);
-      }
+      const hasFace = lastResult?.face_detected ?? true;
+      const faceBox = (lastResult as any)?.face_box;
+      const riskScore = lastResult?.risk_score ?? 0;
 
-      if ((lastResult?.landmarks ?? []).length > 0) {
-        ctx.fillStyle = "#00D4FF";
-        for (const p of lastResult?.landmarks ?? []) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 2, 0, 2 * Math.PI);
-          ctx.fill();
-        }
+      let boxColor = "#10B981";
+      if (riskScore > 60) boxColor = "#FF4444";
+      else if (riskScore >= 30) boxColor = "#F59E0B";
+
+      if (!hasFace) {
+        ctx.fillStyle = "#F59E0B";
+        ctx.font = "bold 24px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("NO FACE DETECTED", canvas.width / 2, canvas.height / 2);
+      } else if (faceBox) {
+        ctx.strokeStyle = boxColor;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(faceBox.x, faceBox.y, faceBox.w, faceBox.h);
+        
+        ctx.fillStyle = boxColor;
+        ctx.font = "bold 16px sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "bottom";
+        ctx.fillText("FACE DETECTED", faceBox.x, faceBox.y - 5);
       }
     }, 1000 / 30);
 
@@ -222,7 +232,10 @@ export default function LiveVideoStream({
             suspiciousRegions={lastResult?.suspicious_regions}
             faceDetected={lastResult?.face_detected ?? true}
           />
-          <div className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full bg-danger/90 px-3 py-1 text-xs font-semibold text-white">
+          <div
+            className={`absolute right-3 top-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold text-white
+              ${(lastResult?.face_detected ?? true) && (lastResult?.risk_score ?? 0) < 30 ? "bg-safe/90" : "bg-danger/90"}`}
+          >
             <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
             LIVE
           </div>

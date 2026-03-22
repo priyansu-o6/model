@@ -16,7 +16,7 @@ class Meso4(nn.Module):
         self.bn3 = nn.BatchNorm2d(16)
         self.conv4 = nn.Conv2d(16, 16, 5, padding=2)
         self.bn4 = nn.BatchNorm2d(16)
-        self.fc1 = nn.Linear(4096, 16)
+        self.fc1 = nn.Linear(1024, 16)
         self.fc2 = nn.Linear(16, 1)
         self.pool = nn.MaxPool2d(2, 2)
         self.dropout = nn.Dropout(0.5)
@@ -74,7 +74,7 @@ class MesoNetDetector:
             y2 = min(frame.shape[0], y + h + pad)
             frame = frame[y1:y2, x1:x2]
         
-        face = cv2.resize(frame, (256, 256))
+        face = cv2.resize(frame, (128, 128))
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
         face = face.astype(np.float32) / 255.0
         face = np.transpose(face, (2, 0, 1))
