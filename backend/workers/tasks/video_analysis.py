@@ -28,7 +28,7 @@ SessionLocal = sessionmaker(bind=sync_engine)
 
 
 @celery_app.task(bind=True, max_retries=3, name="tasks.analyze_video")
-def analyze_video_task(self, session_id: str, media_path: str) -> None:
+def analyze_video_task(self, session_id: str, media_path: str, detection_mode: str = "faceswap") -> None:
     """Analyze uploaded video using the detection service and persist results."""
     db = SessionLocal()
     try:
@@ -132,7 +132,7 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
             print("DEBUG: NO FRAMES EXTRACTED")
 
         detection_service = DetectionService()
-        pipeline_result = detection_service.run_full_pipeline(frames=frames, audio_path=media_path)
+        pipeline_result = detection_service.run_full_pipeline(frames=frames, audio_path=media_path, detection_mode=detection_mode)
         signals = pipeline_result["signals"]
         risk_result = pipeline_result["risk"]
 
@@ -144,7 +144,12 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
                 from ml.deepfake.mesonet import MesoNetDetector
                 _mesonet = MesoNetDetector()
                 _gradcam = MesoNetGradCAM(_mesonet)
-                gradcam_result = _gradcam.analyze(frames[0])
+                
+                cropped_for_gradcam = getattr(detection_service, "last_cropped_frame", None)
+                if cropped_for_gradcam is not None:
+                    gradcam_result = _gradcam.analyze(cropped_for_gradcam)
+                else:
+                    gradcam_result = _gradcam.analyze(frames[0])
                 
                 if gradcam_result["overlay"] is not None:
                     pil_img = PILImage.fromarray(gradcam_result["overlay"])
@@ -160,6 +165,10 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
             print(f"GradCAM failed (non-critical): {e}")
 
         now = datetime.now(timezone.utc)
+        
+        explanation_reasons = list(risk_result.explanation_reasons or [])
+        explanation_reasons.append(f"detection_mode:{detection_mode}")
+        
         det = DetectionResult(
             session_id=session.id,
             verdict=risk_result.verdict,
@@ -172,7 +181,7 @@ def analyze_video_task(self, session_id: str, media_path: str) -> None:
             audio_score=None,
             gradcam_path=gradcam_base64,
             suspicious_regions=suspicious_regions_list,
-            explanation_reasons=risk_result.explanation_reasons,
+            explanation_reasons=explanation_reasons,
             confidence_interval=risk_result.confidence_interval,
             created_at=now,
         )

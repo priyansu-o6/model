@@ -15,7 +15,7 @@ class AIImageDetector:
         try:
             self.detector = pipeline(
                 "image-classification",
-                model="umm-maybe/AI-image-detector",
+                model="Organika/sdxl-detector",
                 device=-1  # CPU
             )
             self.loaded = True
@@ -32,11 +32,12 @@ class AIImageDetector:
             results = self.detector(pil_image)
             ai_score = 0.5
             for r in results:
-                if r["label"].lower() in ["artificial", "fake", "ai"]:
-                    ai_score = r["score"]
+                label = r["label"].lower()
+                if "ai" in label or "fake" in label or "sdxl" in label or "generated" in label:
+                    ai_score = float(r["score"])
                     break
-                elif r["label"].lower() in ["real", "human", "genuine"]:
-                    ai_score = 1.0 - r["score"]
+                elif "real" in label or "human" in label or "photo" in label:
+                    ai_score = 1.0 - float(r["score"])
                     break
             return {
                 "score": float(ai_score),

@@ -43,6 +43,7 @@ function inferStep(status: string): number {
 
 export default function UploadAnalysisPage() {
   const [file, setFile] = useState<File | null>(null);
+  const [detectionMode, setDetectionMode] = useState<'faceswap' | 'aigenerated'>('faceswap');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,7 @@ export default function UploadAnalysisPage() {
     if (!file) return;
     setError(null);
     try {
-      const response = await uploadMedia(file);
+      const response = await uploadMedia(file, detectionMode);
       setSessionId(response.session_id);
       setStatus(response.status ?? "queued");
     } catch {
@@ -114,6 +115,34 @@ export default function UploadAnalysisPage() {
   return (
     <div className="space-y-4">
       <h1 className="font-display text-xl text-text-primary">Upload Analysis</h1>
+      <div className="flex gap-3 mb-6">
+        <button
+          onClick={() => setDetectionMode('faceswap')}
+          className={`flex-1 p-4 rounded-lg border-2 transition-all cursor-pointer ${
+            detectionMode === 'faceswap' 
+              ? 'border-[#00D4FF] bg-[#00D4FF]/10 text-[#00D4FF]' 
+              : 'border-[#1F2937] text-[#6B7280] hover:border-[#374151]'
+          }`}
+        >
+          <div className="text-2xl mb-1">🎭</div>
+          <div className="font-semibold">Face Swap Detection</div>
+          <div className="text-xs mt-1">Neural face swaps, identity substitution in KYC calls</div>
+          <div className="text-xs mt-2 font-mono opacity-70">MesoNet Meso4 • FaceForensics++</div>
+        </button>
+        <button
+          onClick={() => setDetectionMode('aigenerated')}
+          className={`flex-1 p-4 rounded-lg border-2 transition-all cursor-pointer ${
+            detectionMode === 'aigenerated' 
+              ? 'border-[#00D4FF] bg-[#00D4FF]/10 text-[#00D4FF]' 
+              : 'border-[#1F2937] text-[#6B7280] hover:border-[#374151]'
+          }`}
+        >
+          <div className="text-2xl mb-1">🤖</div>
+          <div className="font-semibold">AI Generated Detection</div>
+          <div className="text-xs mt-1">StyleGAN, Midjourney, DALL-E, Gemini synthetic faces</div>
+          <div className="text-xs mt-2 font-mono opacity-70">CNN Classifier • HuggingFace</div>
+        </button>
+      </div>
       <div
         className="rounded-xl border border-dashed border-bg-border bg-bg-surface/60 p-6"
         onDragOver={(e) => e.preventDefault()}

@@ -35,13 +35,16 @@ export async function getMe() {
 }
 
 // Verification
-export async function uploadMedia(file: File) {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await api.post("/api/v1/verify/upload", form, {
-    headers: { "Content-Type": "multipart/form-data" },
+export async function uploadMedia(file: File, detectionMode: string = "faceswap") {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("detection_mode", detectionMode);
+  const response = await api.post("/api/v1/verify/upload", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
   });
-  return res.data as { session_id: string; status: string };
+  return response.data as { session_id: string; status: string };
 }
 
 export const startLiveSession = async (subjectName: string) => {

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ ALLOWED_MIME_TYPES = {
 @router.post("/upload")
 async def upload_verification_media(
     file: UploadFile = File(...),
+    detection_mode: str = Form(default="faceswap"),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict[str, Any]:
     """Upload media, create a verification session, trigger async analysis."""
@@ -55,7 +56,7 @@ async def upload_verification_media(
     await db.commit()
     await db.refresh(session)
 
-    celery_app.send_task("tasks.analyze_video", args=[str(session.id), object_key])
+    celery_app.send_task("tasks.analyze_video", args=[str(session.id), object_key, detection_mode])
 
     return {"session_id": str(session.id), "status": "pending"}
 

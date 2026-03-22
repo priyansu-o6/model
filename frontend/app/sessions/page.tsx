@@ -77,11 +77,24 @@ export default function SessionsPage() {
     URL.revokeObjectURL(url);
   }
 
-  function deleteSelected() {
-    const keep = sorted.filter((s) => !selectedIds.includes(s.id));
-    setItems(keep);
-    setSelected({});
-    pushToast("warning", "Removed selected rows locally");
+  async function deleteSelected() {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} session(s)?`)) return;
+    
+    try {
+      await Promise.all(
+        selectedIds.map(id => 
+          fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/sessions/${id}`, { method: 'DELETE' })
+        )
+      );
+      const keep = items.filter((s) => !selectedIds.includes(s.id));
+      setItems(keep);
+      setSelected({});
+      pushToast("success", `Deleted ${selectedIds.length} session(s)`);
+    } catch (error) {
+      console.error('Delete failed:', error);
+      pushToast("error", "Delete failed - check console");
+    }
   }
 
   return (
@@ -154,7 +167,33 @@ export default function SessionsPage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((s) => (
+              {sorted.map((s) => {
+                const sData = s as any;
+                const subject = sData.subject_name || (sData.media_path ? sData.media_path.split('/').pop() : "Unknown");
+                
+                let duration = "---";
+                if (sData.started_at && sData.completed_at) {
+                  const ms = new Date(sData.completed_at).getTime() - new Date(sData.started_at).getTime();
+                  duration = `${(ms / 1000).toFixed(1)}s`;
+                }
+                
+                const riskScore = sData.risk_score != null ? `${Math.round(Number(sData.risk_score))}` : "---";
+                
+                let verdictBadge = "---";
+                if (sData.verdict) {
+                  const v = String(sData.verdict).toLowerCase();
+                  if (v.includes("auth")) {
+                    verdictBadge = "✅ Authentic";
+                  } else if (v.includes("susp")) {
+                    verdictBadge = "⚠️ Suspicious";
+                  } else if (v.includes("deep") || v.includes("fake")) {
+                    verdictBadge = "🚨 Deepfake";
+                  } else {
+                    verdictBadge = String(sData.verdict);
+                  }
+                }
+                
+                return (
                 <tr key={s.id} className="animate-[slideIn_220ms_ease] border-b border-bg-border/30 last:border-0 hover:bg-bg-border/30">
                   <td className="px-3 py-2">
                     <input
@@ -165,19 +204,29 @@ export default function SessionsPage() {
                     />
                   </td>
                   <td className="px-3 py-2 font-mono text-text-muted">{s.id.slice(0, 12)}</td>
-                  <td className="px-3 py-2">{s.subject_name ?? "N/A"}</td>
+                  <td className="px-3 py-2">{subject}</td>
                   <td className="px-3 py-2 capitalize">{s.mode}</td>
                   <td className="px-3 py-2">{new Date(s.started_at).toLocaleString()}</td>
-                  <td className="px-3 py-2">{s.duration_seconds ?? "-"}</td>
-                  <td className="px-3 py-2">{(s as unknown as { risk_score?: number }).risk_score ?? "-"}</td>
-                  <td className="px-3 py-2">{(s as unknown as { verdict?: string }).verdict ?? "-"}</td>
+                  <td className="px-3 py-2 text-text-muted">{duration}</td>
+                  <td className="px-3 py-2">{riskScore}</td>
+                  <td className="px-3 py-2">
+                    {verdictBadge !== "---" ? (
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        verdictBadge.includes("✅") ? "bg-safe/20 text-safe" :
+                        verdictBadge.includes("⚠️") ? "bg-warning/20 text-warning" :
+                        "bg-danger/20 text-danger"
+                      }`}>
+                        {verdictBadge}
+                      </span>
+                    ) : "---"}
+                  </td>
                   <td className="px-3 py-2">
                     <Link href={`/sessions/${s.id}`} className="rounded border border-accent-cyan/40 px-2 py-1 text-accent-cyan">
                       Open
                     </Link>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>

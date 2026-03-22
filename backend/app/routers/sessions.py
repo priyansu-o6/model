@@ -5,8 +5,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_current_user, get_db_session
 from app.models import DetectionResult, FrameResult, VerificationSession
@@ -17,14 +18,14 @@ from app.services.storage import HEATMAP_BUCKET, MinioStorageService
 router = APIRouter()
 
 
-@router.get("/", response_model=SessionListResponse)
+@router.get("/", response_model=None)
 async def list_sessions(
     page: int = 1,
     limit: int = 20,
     status_filter: Optional[str] = None,
     mode: Optional[str] = None,
     db: AsyncSession = Depends(get_db_session),
-) -> SessionListResponse:
+):
     """Return paginated list of sessions with optional filters."""
     query = select(VerificationSession)
     if status_filter:
@@ -32,22 +33,54 @@ async def list_sessions(
     if mode:
         query = query.where(VerificationSession.mode == mode)
 
-    total = (await db.execute(query.with_only_columns(func.count()))).scalar_one()
+    total = (await db.execute(
+        query.with_only_columns(func.count())
+    )).scalar_one()
 
-    items = (
-        await db.execute(
-            query.order_by(VerificationSession.started_at.desc())
-            .offset((page - 1) * limit)
-            .limit(limit)
-        )
-    ).scalars().all()
+    sessions = (await db.execute(
+        query.order_by(VerificationSession.started_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )).scalars().all()
 
-    return SessionListResponse(
-        items=[SessionSchema.model_validate(s) for s in items],
-        total=total,
-        page=page,
-        limit=limit,
-    )
+    # Get detection results for all sessions
+    session_ids = [s.id for s in sessions]
+    det_results = {}
+    if session_ids:
+        dets = (await db.execute(
+            select(DetectionResult).where(
+                DetectionResult.session_id.in_(session_ids)
+            )
+        )).scalars().all()
+        det_results = {d.session_id: d for d in dets}
+
+    items = []
+    for s in sessions:
+        det = det_results.get(s.id)
+        # Extract filename from media_path
+        filename = None
+        if s.media_path:
+            filename = s.media_path.split("/")[-1]
+        
+        # Calculate duration
+        duration = None
+        if s.started_at and s.completed_at:
+            duration = round((s.completed_at - s.started_at).total_seconds(), 1)
+        
+        items.append({
+            "id": str(s.id),
+            "mode": s.mode,
+            "status": s.status,
+            "subject_name": s.subject_name or filename or "Unknown",
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            "duration_seconds": duration,
+            "risk_score": det.risk_score if det else None,
+            "verdict": det.verdict if det else None,
+            "risk_level": det.risk_level if det else None,
+        })
+
+    return {"items": items, "total": total, "page": page, "limit": limit}
 
 
 @router.get("/{session_id}")
@@ -133,4 +166,31 @@ async def get_session_report(
     """Return a placeholder PDF report."""
     content = b"%PDF-1.4\n% Pratyaksha report placeholder\n"
     return Response(content=content, media_type="application/pdf")
+
+
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    await db.execute(
+        sql_delete(DetectionResult).where(
+            DetectionResult.session_id == session_id
+        )
+    )
+    await db.execute(
+        sql_delete(FrameResult).where(
+            FrameResult.session_id == session_id
+        )
+    )
+    result = await db.execute(
+        select(VerificationSession).where(
+            VerificationSession.id == session_id
+        )
+    )
+    session = result.scalar_one_or_none()
+    if session:
+        await db.delete(session)
+    await db.commit()
+    return {"deleted": True}
 

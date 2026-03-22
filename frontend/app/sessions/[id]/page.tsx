@@ -22,6 +22,7 @@ type FrameResult = {
 };
 
 type SessionResult = {
+  face_detected?: boolean;
   verdict?: string;
   risk_score?: number;
   risk_level?: string;
@@ -57,15 +58,21 @@ function verdictBanner(verdict: string) {
   return { cls: "bg-danger/20 border-danger/50", icon: "🚨", title: "Verification Rejected" };
 }
 
-function verdictExplanation(verdict: string) {
+function verdictExplanation(verdict: string, isAIMode: boolean) {
   const v = verdict.toLowerCase();
   if (v.includes("auth")) {
-    return "MesoNet analysis found no signs of manipulation. This appears to be a genuine person.";
+    return isAIMode 
+      ? "AI Image Detector analysis found no signs of synthetic generation. This appears to be a genuine image."
+      : "MesoNet analysis found no signs of manipulation. This appears to be a genuine person.";
   }
   if (v.includes("susp")) {
-    return "MesoNet raised concerns. We recommend a human reviewer verify this session manually.";
+    return isAIMode
+      ? "AI Image Detector raised concerns. We recommend a human reviewer verify this session manually."
+      : "MesoNet raised concerns. We recommend a human reviewer verify this session manually.";
   }
-  return "MesoNet detected signs of digital manipulation. This session has been flagged and blocked.";
+  return isAIMode
+    ? "AI Image Detector analysis found signs of synthetic generation."
+    : "MesoNet analysis detected signs of digital manipulation.";
 }
 
 function normalizeToPercent(value?: number | null) {
@@ -81,9 +88,9 @@ function scoreColorClass(percent: number | null) {
   return "text-danger";
 }
 
-function humanizeReason(reason: string) {
+function humanizeReason(reason: string, isAIMode: boolean) {
   return reason
-    .replaceAll("xception_score", "MesoNet Deepfake detector");
+    .replaceAll("xception_score", isAIMode ? "AI Generated detector" : "MesoNet Deepfake detector");
 }
 
 export default function SessionDetailPage() {
@@ -119,7 +126,13 @@ export default function SessionDetailPage() {
   const result = session.result ?? {};
   const verdict = String(result.verdict ?? "suspicious");
   const banner = verdictBanner(verdict);
-  const verdictDetails = verdictExplanation(verdict);
+  const isAIMode = (result.explanation_reasons || []).some(
+    (r: string) => {
+      const lower = r?.toLowerCase() || "";
+      return lower.includes('aigenerated') || lower.includes('ai generated') || lower.includes('ai image') || lower.includes('detection_mode:aigenerated');
+    }
+  ) || (Number(result.xception_score) > 0.9 && result.face_detected === false);
+  const verdictDetails = verdictExplanation(verdict, isAIMode);
   const confidenceInterval = result.confidence_interval ?? [];
   const confidenceWidth =
     confidenceInterval.length > 1
@@ -251,7 +264,12 @@ export default function SessionDetailPage() {
               </tr>
             </thead>
             <tbody>
-              <SignalRow name="MesoNet Deepfake Detector" score={result.xception_score} weight={100} meaning="AI model analyzing facial pixel patterns for signs of GAN-generated or swapped faces" />
+              <SignalRow 
+                name={isAIMode ? "AI Generated Detector (SDXL)" : "MesoNet Face Swap Detector"} 
+                score={result.xception_score} 
+                weight={100} 
+                meaning={isAIMode ? "Detects StyleGAN, SDXL, Gemini synthetic AI-generated faces" : "Neural network detecting face-swap artifacts in images"} 
+              />
               <tr className="border-t border-bg-border"><td className="py-2 font-semibold">TOTAL RISK SCORE</td><td className={scoreColorClass(riskScorePercent)}>{riskScorePercent == null ? "N/A" : `${riskScorePercent.toFixed(1)}%`}</td><td>100%</td><td>{result.risk_score == null ? "N/A" : Number(result.risk_score).toFixed(2)}</td><td>{String(result.risk_level ?? "unknown").toUpperCase()}</td><td>Combined weighted risk from MesoNet</td></tr>
             </tbody>
           </table>
@@ -272,7 +290,8 @@ export default function SessionDetailPage() {
               className="rounded-lg max-w-sm w-full"
             />
             {session.result.suspicious_regions && 
-             session.result.suspicious_regions.length > 0 && (
+             session.result.suspicious_regions.length > 0 && 
+             Number(session.result.risk_score) > 30 && (
               <div className="mt-4">
                 <h3 className="text-sm font-medium text-[#F9FAFB] mb-2">
                   Suspicious Regions Detected:
@@ -292,8 +311,10 @@ export default function SessionDetailPage() {
         <div className="rounded-xl border border-bg-border bg-bg-surface/60 p-4">
           <h3 className="font-display text-sm text-text-primary">Why was this flagged?</h3>
           <ul className="mt-2 space-y-1 text-xs">
-            {(result.explanation_reasons ?? []).map((reason, i) => (
-              <li key={i} className="text-warning">⚠️ {humanizeReason(reason)}</li>
+            {(result.explanation_reasons ?? [])
+              .filter((r: string) => !r?.startsWith('detection_mode:'))
+              .map((reason: string, i: number) => (
+              <li key={i} className="text-warning">⚠️ {humanizeReason(reason, isAIMode)}</li>
             ))}
           </ul>
         </div>

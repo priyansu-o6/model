@@ -74,6 +74,8 @@ class MesoNetDetector:
             y2 = min(frame.shape[0], y + h + pad)
             frame = frame[y1:y2, x1:x2]
         
+        self.last_cropped_face = frame.copy()
+        
         face = cv2.resize(frame, (128, 128))
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
         face = face.astype(np.float32) / 255.0

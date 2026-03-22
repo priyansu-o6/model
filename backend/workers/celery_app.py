@@ -27,11 +27,10 @@ def create_celery_app() -> Celery:
         enable_utc=True,
         worker_concurrency=1,
         worker_prefetch_multiplier=1,
-        task_soft_time_limit=60,
-        task_time_limit=120,
+        task_soft_time_limit=300,
+        task_time_limit=600,
     )
     return celery_app
 
 
 app = create_celery_app()
-

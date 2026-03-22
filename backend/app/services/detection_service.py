@@ -37,38 +37,51 @@ class DetectionService:
             self.challenge = MockChallengeEngine()
         self.risk_scorer = RiskScorer()
 
-    def run_full_pipeline(self, frames: List[Any] | None = None, audio_path: str = "") -> Dict[str, Any]:
+    def run_full_pipeline(self, frames: List[Any] | None = None, audio_path: str = "", detection_mode: str = "faceswap") -> Dict[str, Any]:
         """Run all detectors and return unified signals."""
         if not frames or not isinstance(frames[0], np.ndarray):
             frames = [np.zeros((256, 256, 3), dtype=np.uint8) for _ in range(5)]
 
         frame = frames[0]
         
-        # Run MesoNet (face swap detection)
-        mesonet_result = self.deepfake_detector.predict_frame(frame)
-        mesonet_score = float(mesonet_result["score"])
-        
-        # Run AI Image Detector (StyleGAN, Gemini detection)
-        if getattr(self, 'ai_detector', None):
+        if detection_mode == "aigenerated" and getattr(self, 'ai_detector', None):
             try:
-                ai_result = self.ai_detector.predict_frame(frame)
-                ai_score = float(ai_result["score"])
-            except Exception:
-                ai_score = 0.0
-        else:
-            ai_score = 0.0
-        
-        # Combined score - take the higher of the two
-        combined_score = max(mesonet_score, ai_score)
+                result1 = self.ai_detector.predict_frame(frame)
+                
+                from transformers import pipeline
+                from PIL import Image
+                import cv2
+                
+                detector2 = pipeline("image-classification", 
+                    model="umm-maybe/AI-image-detector", device=-1)
+                
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(rgb)
+                result2 = detector2(pil_img)
 
-        print(f"DEBUG MesoNet score: {mesonet_score:.4f}")
-        print(f"DEBUG AI detector score: {ai_score:.4f}")  
-        print(f"DEBUG Combined score: {combined_score:.4f}")
+                score2 = 0.5
+                for r in result2:
+                    if "artificial" in r["label"].lower():
+                        score2 = float(r["score"])
+                        break
+                    elif "human" in r["label"].lower():
+                        score2 = 1.0 - float(r["score"])
+                        break
+
+                combined_score = max(float(result1["score"]), score2)
+                print(f"DEBUG SDXL score: {float(result1['score']):.4f} | ViT score: {score2:.4f} | Combined: {combined_score:.4f}")
+            except Exception as e:
+                print(f"DEBUG Dual-AI Error: {e}")
+                combined_score = 0.0
+        else:
+            deepfake_result = self.deepfake_detector.predict_frame(frame)
+            combined_score = 1.0 - float(deepfake_result.get("score", 0.0))
+            self.last_cropped_frame = getattr(self.deepfake_detector, 'last_cropped_face', None)
+            
+        print(f"DEBUG mode={detection_mode} Final Extracted score: {combined_score:.4f}")
 
         signals = {
             "xception_score": combined_score,
-            "mesonet_score": mesonet_score,
-            "ai_score": ai_score,
         }
 
         risk = self.risk_scorer.compute_risk(signals)
