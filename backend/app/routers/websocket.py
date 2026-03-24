@@ -25,10 +25,12 @@ import numpy as np
 import cv2
 from ml.deepfake.mesonet import MesoNetDetector
 from ml.liveness.rppg_extractor import RPPGExtractor
+from ml.utils.face_detection import MediaPipeFaceDetector
 
 # Module-level singletons - load once
 _mesonet_instance = None
 _rppg_instances: dict = {}
+_face_detector_instance = None
 
 def get_mesonet():
     global _mesonet_instance
@@ -40,6 +42,12 @@ def get_rppg(session_id: str) -> RPPGExtractor:
     if session_id not in _rppg_instances:
         _rppg_instances[session_id] = RPPGExtractor(fps=15.0, window_seconds=3)
     return _rppg_instances[session_id]
+
+def get_face_detector() -> MediaPipeFaceDetector:
+    global _face_detector_instance
+    if _face_detector_instance is None:
+        _face_detector_instance = MediaPipeFaceDetector()
+    return _face_detector_instance
 
 router = APIRouter()
 
@@ -55,44 +63,22 @@ async def websocket_live(
     frame_count = 0
     last_result_time = asyncio.get_event_loop().time()
 
-    mesonet = get_mesonet()
-    rppg = get_rppg(session_id)
-    temporal = MockTemporalScorer()
-    audio = MockAASSISTDetector()
-    challenge_engine = MockChallengeEngine()
-    scorer = RiskScorer()
+    try:
+        mesonet = get_mesonet()
+        rppg = get_rppg(session_id)
+        temporal = MockTemporalScorer()
+        audio = MockAASSISTDetector()
+        challenge_engine = MockChallengeEngine()
+        scorer = RiskScorer()
+        face_detector = get_face_detector()
+    except Exception as e:
+        print(f"[WS INIT ERROR] failed to initialize models: {e}")
+        import traceback; traceback.print_exc()
+        await websocket.close()
+        return
 
     def crop_face(frame):
-        h, w = frame.shape[:2]
-        blob = cv2.dnn.blobFromImage(
-            cv2.resize(frame, (300, 300)), 1.0,
-            (300, 300), (104.0, 177.0, 123.0)
-        )
-        
-        # Use OpenCV's built-in face detector
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Relaxed face detection for demo
-        faces = face_cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=4, 
-            minSize=(80, 80),
-            flags=cv2.CASCADE_SCALE_IMAGE
-        )
-        
-        # Take largest face only
-        if len(faces) > 0:
-            faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
-            x, y, w_f, h_f = faces[0]
-            pad = int(0.3 * max(w_f, h_f))
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(w, x + w_f + pad)
-            y2 = min(h, y + h_f + pad)
-            return frame[y1:y2, x1:x2], True, (x, y, w_f, h_f)
-        return frame, False, None
+        return face_detector.detect_face(frame)
 
     rppg_result = {"bpm": 0.0, "liveness_score": 0.5, "ready": False}
 
@@ -124,15 +110,14 @@ async def websocket_live(
                         rppg.add_frame(cropped)
                         x_out = mesonet.predict_frame(cropped)
                     else:
-                        # Still feed center crop to rPPG even without confirmed face
-                        h, w = frame.shape[:2]
-                        center_crop = frame[h//4:3*h//4, w//4:3*w//4]
-                        rppg.add_frame(center_crop)
+                        rppg.reset()  # clear bad data instead of polluting buffer
                         x_out = {"score": 1.0}
                 else:
                     x_out = {"score": 0.0}
             except Exception as e:
-                break
+                print(f"[WS ERROR] frame processing error: {e}")
+                import traceback; traceback.print_exc()
+                continue
             
             x_score = 1.0 - float(x_out.get("score", 0.0))
             frame_count += 1
@@ -174,7 +159,9 @@ async def websocket_live(
                         },
                     )
                     last_result_time = now_ts
-                except Exception:
+                except Exception as e:
+                    print(f"[WS SEND ERROR] {e}")
+                    import traceback; traceback.print_exc()
                     break
 
             if frame_count % 5 == 0:

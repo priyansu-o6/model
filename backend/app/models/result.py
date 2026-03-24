@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import Boolean, Column, Float, ForeignKey, String, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.types import DateTime, Integer
+from sqlalchemy.types import DateTime, Integer, BigInteger
 
 from db.database import Base
 
@@ -50,7 +50,7 @@ class FrameResult(Base):
     )
     session_id = Column(UUID(as_uuid=True), ForeignKey("verification_sessions.id"), nullable=False, index=True)
     frame_number = Column(Integer, nullable=False)
-    timestamp_ms = Column(Integer, nullable=False)
+    timestamp_ms = Column(BigInteger, nullable=False)
     xception_score = Column(Float, nullable=True)
     temporal_consistency = Column(Float, nullable=True)
     rppg_value = Column(Float, nullable=True)

@@ -33,6 +33,7 @@ export default function LiveVideoStream({
   const [frameCount, setFrameCount] = useState(0);
   const [lastResult, setLastResult] = useState<LiveDetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isWsReady, setIsWsReady] = useState(false);
 
   const wsBaseUrl = useMemo(
     () => process.env.NEXT_PUBLIC_WS_BASE_URL ?? "ws://localhost:8000",
@@ -88,6 +89,8 @@ export default function LiveVideoStream({
       wsRef.current = ws;
 
       ws.onopen = () => {
+        console.log("WebSocket ready");
+        setIsWsReady(true);
         reconnectAttemptsRef.current = 0;
         onConnectionChange("connected");
       };
@@ -102,11 +105,13 @@ export default function LiveVideoStream({
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
         onConnectionChange("reconnecting");
       };
 
       ws.onclose = () => {
+        setIsWsReady(false);
         if (!active) {
           onConnectionChange("disconnected");
           return;
@@ -123,7 +128,9 @@ export default function LiveVideoStream({
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
       }
-      wsRef.current?.close();
+      if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        wsRef.current.close();
+      }
       onConnectionChange("disconnected");
     };
   }, [active, onConnectionChange, onResult, sessionId, wsBaseUrl]);
@@ -177,7 +184,7 @@ export default function LiveVideoStream({
   }, [active, lastResult]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || !isWsReady) return;
     const captureTimer = window.setInterval(() => {
       const ws = wsRef.current;
       const video = videoRef.current;
@@ -208,13 +215,15 @@ export default function LiveVideoStream({
           const combined = new Uint8Array(metaBytes.length + frameBytes.length);
           combined.set(metaBytes, 0);
           combined.set(frameBytes, metaBytes.length);
-          wsRef.current?.send(combined);
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(combined);
+          }
         });
       }, "image/jpeg", 0.8);
     }, 200);
 
     return () => window.clearInterval(captureTimer);
-  }, [active, sessionId]);
+  }, [active, sessionId, isWsReady]);
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl border border-bg-border bg-black">

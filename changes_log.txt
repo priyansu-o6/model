@@ -1,0 +1,21 @@
+# Code Changes Log
+
+Started on: 2026-03-23 19:31:44
+
+## 2026-03-23 19:33:40
+- Created `changes_log.txt` to track all future changes to the codebase as requested by the user.
+
+## 2026-03-23 19:48:15
+- Replaced Haar Cascade face detection with MediaPipe for improved accuracy.
+- Updated `backend/requirements.txt` to include `mediapipe==0.10.11`.
+- Created `backend/ml/utils/face_detection.py` as a reusable utility for MediaPipe face detection.
+- Refactored `backend/app/routers/websocket.py` to use `MediaPipeFaceDetector`.
+- Refactored `backend/ml/deepfake/mesonet.py` to use `MediaPipeFaceDetector`.
+- Cleaned up `backend/ml/liveness/rppg_extractor.py` by removing unused `cv2.CascadeClassifier`.
+
+## 2026-03-23 19:41:20
+- Modified `backend/app/routers/websocket.py` to reset rPPG when face is not detected, instead of feeding a center crop.
+
+## 2026-03-23 19:57:30
+- Updated `backend/Dockerfile` to install `libgl1-mesa-glx` and `libglib2.0-0` to fix OpenCV/MediaPipe library errors.
+- Verified that `backend/requirements.txt` is using `opencv-python-headless` for a leaner image.

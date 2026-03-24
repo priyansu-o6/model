@@ -25,8 +25,14 @@ class ConnectionManager:
 
     async def send_result(self, session_id: str, data: dict[str, Any]) -> None:
         """Send a JSON result to all connections for a session."""
+        dead = set()
         for ws in list(self._connections.get(session_id, set())):
-            await ws.send_json(data)
+            try:
+                await ws.send_json(data)
+            except Exception:
+                dead.add(ws)
+        if dead:
+            self._connections[session_id] = self._connections[session_id] - dead
 
     async def broadcast_to_session(self, session_id: str, message: str) -> None:
         """Broadcast a text message to all connections for a session."""

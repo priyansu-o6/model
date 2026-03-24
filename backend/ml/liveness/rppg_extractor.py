@@ -9,9 +9,6 @@ class RPPGExtractor:
         self.fps = fps
         self.window_size = int(fps * window_seconds)
         self.green_channel_buffer = deque(maxlen=self.window_size)
-        self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
 
     def add_frame(self, frame: np.ndarray) -> None:
         # Frame is already a cropped face - extract forehead directly

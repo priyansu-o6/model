@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import cv2
 from pathlib import Path
+from ml.utils.face_detection import MediaPipeFaceDetector
 
 
 class Meso4(nn.Module):
@@ -38,7 +39,9 @@ class MesoNetDetector:
         self.device = torch.device("cpu")
         self.model = Meso4().to(self.device)
         self.model.eval()
+        self.face_detector = MediaPipeFaceDetector()
         self.weights_loaded = False
+        self.last_cropped_face = None
         self._load_weights()
 
     def _load_weights(self):
@@ -58,21 +61,7 @@ class MesoNetDetector:
 
     def preprocess(self, frame: np.ndarray) -> torch.Tensor:
         # Try to detect face and crop it
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4, minSize=(50, 50))
-        
-        if len(faces) > 0:
-            x, y, w, h = faces[0]
-            # Add padding around face
-            pad = int(0.2 * max(w, h))
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(frame.shape[1], x + w + pad)
-            y2 = min(frame.shape[0], y + h + pad)
-            frame = frame[y1:y2, x1:x2]
+        frame, found, _ = self.face_detector.detect_face(frame, pad_ratio=0.2)
         
         self.last_cropped_face = frame.copy()
         
